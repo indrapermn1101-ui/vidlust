@@ -1,4 +1,4 @@
-# PANDUAN Vidlust v0.6
+# PANDUAN Vidlust v0.7
 
 Generator video ilustrasi & motion graphic siap submit ke Adobe Stock.
 18 template prosedural + Motion Studio + Batch + AI video + aplikasi desktop (ffmpeg lokal).
@@ -9,7 +9,7 @@ Generator video ilustrasi & motion graphic siap submit ke Adobe Stock.
 
 | Cara | Langkah | Kegunaan |
 |---|---|---|
-| **Desktop (disarankan)** | Dobel-klik `release\Vidlust-0.5.0-win.exe` | Produksi: convert MP4/ProRes/GIF + simpan batch ke folder |
+| **Desktop (disarankan)** | Dobel-klik `release\Vidlust-0.7.0-win.exe` | Produksi: convert MP4/ProRes/GIF + simpan batch ke folder |
 | **Localhost** | `cd F:\GILANG\vidlust` → `npm run dev` → buka `http://127.0.0.1:5173/` | Development |
 | **Build web** | `npm run build` → hosting folder `dist/` | Publish ke internet |
 
@@ -177,7 +177,7 @@ Folder default: `Videos\Vidlust`.
 
 | Gejala | Solusi |
 |---|---|
-| Exe terbuka hitam (versi lama) | Pakai `Vidlust-0.5.0-win.exe` (sudah diperbaiki via base path relatif) |
+| Exe terbuka hitam (versi lama) | Pakai `Vidlust-0.7.0-win.exe` (versi terbaru, sudah diperbaiki via base path relatif) |
 | Export gagal / tombol nonaktif | Pakai Chrome/Edge terbaru (butuh WebCodecs untuk offline) |
 | Hasil .webm bukan .mp4 | Normal di Firefox → convert via app desktop, atau render di Chrome |
 | Alpha hilang setelah convert | Pastikan sumbernya WebM dari mode transparan, convert via ProRes |
