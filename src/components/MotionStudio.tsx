@@ -4,6 +4,7 @@ import { EASES, uid } from '../motion/types';
 import { drawScene, evalLayer, preloadImage } from '../motion/render';
 import { ENTRANCES, makeLayer, starterScenes } from '../motion/presets';
 import { defaultScene, deleteScene, listScenes, normalizeScene, saveScene } from '../motion/storage';
+import { AI_STYLES, composeOfflineScene, generateSceneFromIdea, type AiSceneStyle } from '../lib/aiScene';
 import { renderSceneOffline } from '../motion/export';
 import { supportsOfflineEncode } from '../lib/frameEncoder';
 import { ADOBE_PRESETS, QUICK_RESOLUTIONS, generateMetadata, metadataToCSV, validateForAdobe } from '../lib/adobeStock';
@@ -52,6 +53,13 @@ export default function MotionStudio() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [lastFile, setLastFile] = useState<{ url: string; name: string; sizeMB: number; engine: string; blob: Blob } | null>(null);
   const [thumb, setThumb] = useState('');
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiIdea, setAiIdea] = useState('');
+  const [aiStyle, setAiStyle] = useState<AiSceneStyle>('auto');
+  const [aiDur, setAiDur] = useState(10);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiStatus, setAiStatus] = useState('');
+  const [aiOk, setAiOk] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timeRef = useRef(0);
@@ -159,10 +167,42 @@ export default function MotionStudio() {
   function loadStarter(id: string) {
     const s = starterScenes().find((x) => x.id === id);
     if (!s) return;
-    const sc = normalizeScene(s.make());
+    applyGeneratedScene(normalizeScene(s.make()));
+  }
+
+  function applyGeneratedScene(sc: MotionScene) {
     setScene(sc);
     setSelId(sc.layers[0]?.id ?? null);
     seek(0);
+  }
+
+  async function handleAiGenerate() {
+    if (aiBusy) return;
+    if (!aiIdea.trim()) {
+      setAiOk(false);
+      setAiStatus('Tulis ide scene dulu (bahasa Indonesia).');
+      return;
+    }
+    setAiBusy(true);
+    setAiOk(true);
+    setAiStatus('AI sedang merancang layer + keyframe… (bisa 10–60 detik)');
+    try {
+      const r = await generateSceneFromIdea(aiIdea, { style: aiStyle, duration: aiDur });
+      applyGeneratedScene(r.scene);
+      setAiStatus(`Scene "${r.scene.name}" jadi — ${r.scene.layers.length} layer, langsung bisa diedit di bawah.${r.warnings.length ? ' ' + r.warnings.join(' ') : ''}`);
+    } catch (e) {
+      setAiOk(false);
+      setAiStatus((e as Error).message);
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function handleAiOffline() {
+    const r = composeOfflineScene(aiIdea.trim() || 'kreasi baru', { style: aiStyle, duration: aiDur });
+    applyGeneratedScene(r.scene);
+    setAiOk(true);
+    setAiStatus(`Mode offline: preset "${r.scene.name}" dimuat + teks & warna disesuaikan. ${r.warnings.join(' ')}`);
   }
 
   function onImageFile(f: File | undefined) {
@@ -279,6 +319,34 @@ export default function MotionStudio() {
           </div>
         </div>
       )}
+
+      {/* AI Scene: ide → layer + keyframe siap edit */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0 }}>✨ Generate scene dari ide (AI)</h2>
+          <button className="ghost" style={{ flex: '0 0 auto' }} onClick={() => setAiOpen(!aiOpen)}>{aiOpen ? '▾ Tutup' : '▸ Buka'}</button>
+        </div>
+        {aiOpen && (
+          <div style={{ marginTop: 10 }}>
+            <p className="hint">Tulis ide bahasa Indonesia → AI merancang layer + keyframe → hasilnya langsung bisa diedit, disimpan & di-export seperti scene biasa. Gratis via Pollinations (pakai kunci yang sama seperti tab 🎁 AI Video).</p>
+            <label className="lbl">Ide scene</label>
+            <textarea value={aiIdea} onChange={(e) => setAiIdea(e.target.value)} placeholder="cth: kopi hangat di pagi hari untuk intro cafe" style={{ minHeight: 60 }} />
+            <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 150px' }}><label className="lbl">Gaya</label>
+                <select value={aiStyle} onChange={(e) => setAiStyle(e.target.value as AiSceneStyle)}>
+                  {AI_STYLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+              </div>
+              <div><label className="lbl">Durasi (dtk)</label><input type="number" style={{ width: 80 }} min={5} max={30} value={aiDur} onChange={(e) => setAiDur(Math.min(30, Math.max(5, Number(e.target.value) || 10)))} /></div>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="primary" style={{ flex: 1 }} disabled={aiBusy} onClick={handleAiGenerate}>{aiBusy ? '⏳ AI merancang…' : '✨ Generate dengan AI'}</button>
+              <button className="ghost" disabled={aiBusy} onClick={handleAiOffline}>🎲 Offline (tanpa AI)</button>
+            </div>
+            {aiStatus && <div className={'check ' + (aiOk ? 'pass' : 'fail')} style={{ marginTop: 8 }}><div><b>{aiStatus}</b></div></div>}
+          </div>
+        )}
+      </div>
 
       <div className="studio-grid">
         {/* Layer */}

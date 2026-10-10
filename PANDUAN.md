@@ -140,6 +140,19 @@ Sama seperti generator: MP4 frame-exact offline / WebM alpha realtime /
 aksi desktop + thumbnail. Plus panel **Kepatuhan Adobe Stock** dan
 **metadata + CSV otomatis** (kategori Graphics, filename `vidlust_studio_…`).
 
+### 4.6 Generate scene dari ide (AI) ✨
+
+Di Motion Studio, buka panel **✨ Generate scene dari ide (AI)**:
+
+1. Tulis ide bahasa Indonesia (cth: `kopi hangat di pagi hari untuk intro cafe`).
+2. Pilih gaya (Otomatis/Corporate/Neon/Pastel/Broadcast) + durasi 5–30 detik.
+3. Klik **✨ Generate dengan AI** — gratis via Pollinations (pakai kunci yang sama
+   seperti tab 🎁 AI Video). AI merancang layer + keyframe (maks 6 layer,
+   tanpa layer gambar), hasilnya langsung bisa diedit, disimpan & di-export
+   seperti scene biasa.
+4. Tanpa internet/kunci? Klik **🎲 Offline** — preset starter di-remix
+   (teks + warna disesuaikan dari ide) tanpa AI.
+
 ---
 
 ## 5. Fitur 🖥 Desktop (hanya di file .exe)
