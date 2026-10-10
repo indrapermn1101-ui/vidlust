@@ -4,7 +4,7 @@ import { EASES, uid } from '../motion/types';
 import { drawScene, evalLayer, preloadImage } from '../motion/render';
 import { ENTRANCES, makeLayer, starterScenes } from '../motion/presets';
 import { defaultScene, deleteScene, listScenes, normalizeScene, saveScene } from '../motion/storage';
-import { AI_STYLES, composeOfflineScene, generateSceneFromIdea, type AiSceneStyle } from '../lib/aiScene';
+import { AI_PROVIDERS, AI_STYLES, composeOfflineScene, generateSceneFromIdea, get9rEndpoint, get9rKey, get9rModel, getAiProvider, set9rEndpoint, set9rKey, set9rModel, setAiProvider, testAiConnection, type AiProviderId, type AiSceneStyle } from '../lib/aiScene';
 import { renderSceneOffline } from '../motion/export';
 import { supportsOfflineEncode } from '../lib/frameEncoder';
 import { ADOBE_PRESETS, QUICK_RESOLUTIONS, generateMetadata, metadataToCSV, validateForAdobe } from '../lib/adobeStock';
@@ -60,6 +60,14 @@ export default function MotionStudio() {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiStatus, setAiStatus] = useState('');
   const [aiOk, setAiOk] = useState(true);
+  const [aiProvider, setAiProviderState] = useState<AiProviderId>(() => getAiProvider());
+  const [r9Endpoint, setR9Endpoint] = useState(() => get9rEndpoint());
+  const [r9Key, setR9Key] = useState(() => get9rKey());
+  const [r9Model, setR9Model] = useState(() => get9rModel());
+  const [showR9Key, setShowR9Key] = useState(false);
+  const [connBusy, setConnBusy] = useState(false);
+  const [connStatus, setConnStatus] = useState('');
+  const [connOk, setConnOk] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timeRef = useRef(0);
@@ -183,6 +191,11 @@ export default function MotionStudio() {
       setAiStatus('Tulis ide scene dulu (bahasa Indonesia).');
       return;
     }
+    // simpan pengaturan provider agar dipakai generate + generate berikutnya
+    setAiProvider(aiProvider);
+    set9rEndpoint(r9Endpoint);
+    set9rKey(r9Key);
+    set9rModel(r9Model);
     setAiBusy(true);
     setAiOk(true);
     setAiStatus('AI sedang merancang layer + keyframe… (bisa 10–60 detik)');
@@ -195,6 +208,25 @@ export default function MotionStudio() {
       setAiStatus((e as Error).message);
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  async function handleTestConnection() {
+    if (connBusy) return;
+    setAiProvider(aiProvider);
+    set9rEndpoint(r9Endpoint);
+    set9rKey(r9Key);
+    set9rModel(r9Model);
+    setConnBusy(true);
+    setConnOk(true);
+    setConnStatus('Menghubungi…');
+    try {
+      setConnStatus(await testAiConnection(aiProvider));
+    } catch (e) {
+      setConnOk(false);
+      setConnStatus((e as Error).message);
+    } finally {
+      setConnBusy(false);
     }
   }
 
@@ -328,7 +360,32 @@ export default function MotionStudio() {
         </div>
         {aiOpen && (
           <div style={{ marginTop: 10 }}>
-            <p className="hint">Tulis ide bahasa Indonesia → AI merancang layer + keyframe → hasilnya langsung bisa diedit, disimpan & di-export seperti scene biasa. Gratis via Pollinations (pakai kunci yang sama seperti tab 🎁 AI Video).</p>
+            <p className="hint">Tulis ide bahasa Indonesia → AI merancang layer + keyframe → hasilnya langsung bisa diedit, disimpan & di-export seperti scene biasa.</p>
+            <label className="lbl">Provider AI</label>
+            <select value={aiProvider} onChange={(e) => { const p = e.target.value as AiProviderId; setAiProviderState(p); setAiProvider(p); setConnStatus(''); }}>
+              {AI_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label} — {p.hint}</option>)}
+            </select>
+            {aiProvider === 'pollinations' && (
+              <p className="hint" style={{ marginTop: 6 }}>Gratis via Pollinations — pakai kunci yang sama seperti tab 🎁 AI Video (daftar di enter.pollinations.ai).</p>
+            )}
+            {aiProvider === 'router9' && (
+              <div style={{ marginTop: 8 }}>
+                <p className="hint">Gratis via 9Router di laptopmu: install (`npm install -g 9router` → jalankan `9router`), hubungkan provider gratis (mis. Kiro / OpenCode Free) di dashboard, lalu salin API key + nama model ke bawah.</p>
+                <label className="lbl">Endpoint 9Router</label>
+                <input type="text" value={r9Endpoint} onChange={(e) => setR9Endpoint(e.target.value)} placeholder="http://localhost:20128/v1" />
+                <label className="lbl" style={{ marginTop: 6 }}>API key 9Router</label>
+                <div className="row">
+                  <input type={showR9Key ? 'text' : 'password'} value={r9Key} onChange={(e) => setR9Key(e.target.value)} placeholder="Salin dari dashboard 9Router" />
+                  <button className="ghost" style={{ flex: '0 0 auto' }} onClick={() => setShowR9Key(!showR9Key)}>{showR9Key ? '🙈' : '👁'}</button>
+                </div>
+                <label className="lbl" style={{ marginTop: 6 }}>Model (sesuai provider yang terhubung)</label>
+                <input type="text" value={r9Model} onChange={(e) => setR9Model(e.target.value)} placeholder="kr/claude-haiku-4.5" />
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="ghost" disabled={connBusy} onClick={handleTestConnection}>{connBusy ? '⏳ Mengetes…' : '🔌 Test koneksi'}</button>
+                </div>
+                {connStatus && <div className={'check ' + (connOk ? 'pass' : 'fail')} style={{ marginTop: 8 }}><div><b>{connStatus}</b></div></div>}
+              </div>
+            )}
             <label className="lbl">Ide scene</label>
             <textarea value={aiIdea} onChange={(e) => setAiIdea(e.target.value)} placeholder="cth: kopi hangat di pagi hari untuk intro cafe" style={{ minHeight: 60 }} />
             <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>

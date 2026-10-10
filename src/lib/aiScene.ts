@@ -24,6 +24,72 @@ export const AI_STYLES: { id: AiSceneStyle; label: string }[] = [
   { id: 'broadcast', label: 'Broadcast / lower third' },
 ];
 
+// ---------- Provider LLM (Pollinations cloud / 9Router lokal) ----------
+
+export type AiProviderId = 'pollinations' | 'router9';
+
+export const AI_PROVIDERS: { id: AiProviderId; label: string; hint: string }[] = [
+  { id: 'pollinations', label: 'Pollinations (cloud, gratis)', hint: 'Kunci dari enter.pollinations.ai' },
+  { id: 'router9', label: '9Router lokal (gratis)', hint: 'Butuh install 9Router + provider gratis' },
+];
+
+const LS_AI_PROVIDER = 'vidlust:ai_provider';
+const LS_9R_ENDPOINT = 'vidlust:9router_endpoint';
+const LS_9R_KEY = 'vidlust:9router_key';
+const LS_9R_MODEL = 'vidlust:9router_model';
+
+export const DEFAULT_9R_ENDPOINT = 'http://localhost:20128/v1';
+export const DEFAULT_9R_MODEL = 'kr/claude-haiku-4.5';
+const POLLI_MODELS_URL = 'https://text.pollinations.ai/models';
+
+function lsGet(k: string): string {
+  try { return localStorage.getItem(k) ?? ''; } catch { return ''; }
+}
+
+function lsSet(k: string, v: string) {
+  try {
+    if (v) localStorage.setItem(k, v);
+    else localStorage.removeItem(k);
+  } catch { /* abaikan */ }
+}
+
+export function getAiProvider(): AiProviderId {
+  return lsGet(LS_AI_PROVIDER) === 'router9' ? 'router9' : 'pollinations';
+}
+
+export function setAiProvider(p: AiProviderId) {
+  lsSet(LS_AI_PROVIDER, p === 'router9' ? 'router9' : '');
+}
+
+export function get9rEndpoint(): string {
+  return lsGet(LS_9R_ENDPOINT) || DEFAULT_9R_ENDPOINT;
+}
+
+export function set9rEndpoint(v: string) {
+  lsSet(LS_9R_ENDPOINT, v.trim());
+}
+
+export function get9rKey(): string {
+  return lsGet(LS_9R_KEY);
+}
+
+export function set9rKey(v: string) {
+  lsSet(LS_9R_KEY, v.trim());
+}
+
+export function get9rModel(): string {
+  return lsGet(LS_9R_MODEL) || DEFAULT_9R_MODEL;
+}
+
+export function set9rModel(v: string) {
+  lsSet(LS_9R_MODEL, v.trim());
+}
+
+/** Gabung base URL + path tanpa garis miring ganda. */
+export function joinUrl(base: string, path: string): string {
+  return base.replace(/\/+$/, '') + '/' + path.replace(/^\/+/, '');
+}
+
 export interface AiSceneOptions {
   style?: AiSceneStyle;
   duration?: number; // detik, dijepit 5..30
@@ -214,22 +280,62 @@ export function sanitizeAiScene(raw: unknown, duration: number): { scene: Motion
   return { scene, warnings };
 }
 
-function httpError(status: number): Error {
-  if (status === 401) return new Error('Kunci ditolak (401): salah atau kedaluwarsa. Ambil ulang di enter.pollinations.ai.');
-  if (status === 402 || status === 429) return new Error('Pollen habis / limit tercapai. Tunggu atau kerjakan quest di enter.pollinations.ai untuk tambah Pollen gratis.');
+export interface ChatTarget {
+  url: string; // endpoint chat-completions penuh
+  key: string;
+  model: string;
+  provider: AiProviderId;
+}
+
+/** Susun target chat dari provider aktif. Melempar Error berbahasa Indonesia bila belum siap. */
+export function resolveTarget(provider: AiProviderId): ChatTarget {
+  if (provider === 'router9') {
+    const endpoint = get9rEndpoint().trim() || DEFAULT_9R_ENDPOINT;
+    const key = get9rKey().trim();
+    if (!key) throw new Error('API key 9Router masih kosong — salin dari dashboard 9Router (http://localhost:20128).');
+    const model = get9rModel().trim() || DEFAULT_9R_MODEL;
+    return { url: joinUrl(endpoint, 'chat/completions'), key, model, provider };
+  }
+  const key = getPolliKey().trim();
+  if (!key) throw new Error('Kunci Pollinations masih kosong — daftar gratis di enter.pollinations.ai lalu tempel di tab 🎁 AI Video. (Tanpa kartu kredit.)');
+  return { url: AI_SCENE_ENDPOINT, key, model: AI_SCENE_MODEL, provider };
+}
+
+function httpError(status: number, provider: AiProviderId): Error {
+  if (status === 401) {
+    return provider === 'router9'
+      ? new Error('Kunci 9Router ditolak (401): salah atau kedaluwarsa. Salin ulang API key dari dashboard 9Router.')
+      : new Error('Kunci ditolak (401): salah atau kedaluwarsa. Ambil ulang di enter.pollinations.ai.');
+  }
+  if (status === 402 || status === 429) {
+    return provider === 'router9'
+      ? new Error('9Router menolak (limit/kuota habis). Cek provider di dashboard 9Router atau ganti provider.')
+      : new Error('Pollen habis / limit tercapai. Tunggu atau kerjakan quest di enter.pollinations.ai untuk tambah Pollen gratis.');
+  }
+  if (status === 404) {
+    return provider === 'router9'
+      ? new Error('Endpoint 9Router tidak ketemu (404). Pastikan alamat endpoint benar, cth http://localhost:20128/v1.')
+      : new Error('Endpoint AI tidak ketemu (404). Coba lagi nanti.');
+  }
   return new Error(`AI menolak permintaan (${status}). Coba lagi atau pakai mode offline.`);
 }
 
-async function callTextApi(system: string, user: string, key: string): Promise<string> {
+function netError(provider: AiProviderId): Error {
+  return provider === 'router9'
+    ? new Error('Tidak bisa menghubungi 9Router. Pastikan 9Router ter-install & berjalan (dashboard http://localhost:20128). Bila browser memblokir, jalankan versi desktop (.exe).')
+    : new Error('Tidak bisa menghubungi AI (jaringan / offline?). Cek internet atau pakai mode offline.');
+}
+
+async function callChatCompletions(t: ChatTarget, system: string, user: string): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
   try {
-    const res = await fetch(AI_SCENE_ENDPOINT, {
+    const res = await fetch(t.url, {
       method: 'POST',
       signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.key}` },
       body: JSON.stringify({
-        model: AI_SCENE_MODEL,
+        model: t.model,
         temperature: 0.4,
         max_tokens: 2500,
         messages: [
@@ -238,26 +344,25 @@ async function callTextApi(system: string, user: string, key: string): Promise<s
         ],
       }),
     });
-    if (!res.ok) throw httpError(res.status);
+    if (!res.ok) throw httpError(res.status, t.provider);
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content?.trim() ?? '';
     if (!content) throw new Error('AI mengembalikan respons kosong. Coba lagi.');
     return content;
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw new Error('AI timeout (>2 menit). Coba ide lebih pendek atau pakai mode offline.');
-    if (e instanceof TypeError) throw new Error('Tidak bisa menghubungi AI (jaringan / offline?). Cek internet atau pakai mode offline.');
+    if (e instanceof TypeError) throw netError(t.provider);
     throw e;
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** Generate scene dari ide via AI. 1x percobaan + 1x perbaikan otomatis bila JSON rusak. */
+/** Generate scene dari ide via provider aktif. 1x percobaan + 1x perbaikan otomatis bila JSON rusak. */
 export async function generateSceneFromIdea(idea: string, opts: AiSceneOptions = {}): Promise<AiSceneResult> {
   const clean = idea.trim().slice(0, 300);
   if (!clean) throw new Error('Tulis ide dulu.');
-  const key = getPolliKey().trim();
-  if (!key) throw new Error('Kunci Pollinations masih kosong — daftar gratis di enter.pollinations.ai lalu tempel di tab 🎁 AI Video. (Tanpa kartu kredit.)');
+  const target = resolveTarget(getAiProvider());
   const duration = Math.min(30, Math.max(5, Math.round(opts.duration ?? 10)));
   const style = opts.style ?? 'auto';
   const { system, user } = buildScenePrompt(clean, duration, style);
@@ -265,7 +370,7 @@ export async function generateSceneFromIdea(idea: string, opts: AiSceneOptions =
   for (let attempt = 0; attempt < 2; attempt++) {
     const ask = attempt === 0 ? user : `${user}\n\nPERBAIKAN: respons sebelumnya tidak valid (${lastErr?.message ?? 'format salah'}). Kirim ulang HANYA JSON yang valid.`;
     try {
-      const content = await callTextApi(system, ask, key);
+      const content = await callChatCompletions(target, system, ask);
       const { scene, warnings } = sanitizeAiScene(extractSceneJson(content), duration);
       return { scene, warnings, offline: false };
     } catch (e) {
@@ -273,6 +378,38 @@ export async function generateSceneFromIdea(idea: string, opts: AiSceneOptions =
     }
   }
   throw new Error(`${lastErr?.message ?? 'Gagal generate.'} Bila terus gagal, pakai mode offline (tanpa AI).`);
+}
+
+/** Test koneksi provider: mengembalikan ringkasan OK atau melempar Error Indonesia. */
+export async function testAiConnection(provider: AiProviderId): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    if (provider === 'pollinations') {
+      const res = await fetch(POLLI_MODELS_URL, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`Pollinations ${res.status}: tidak bisa dihubungi.`);
+      return 'Pollinations OK — server teks merespons.';
+    }
+    const endpoint = get9rEndpoint().trim() || DEFAULT_9R_ENDPOINT;
+    const key = get9rKey().trim();
+    if (!key) throw new Error('Isi dulu API key 9Router (salin dari dashboard http://localhost:20128).');
+    const res = await fetch(joinUrl(endpoint, 'models'), {
+      signal: ctrl.signal,
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (res.status === 401) throw new Error('Kunci 9Router ditolak (401). Salin ulang API key dari dashboard.');
+    if (res.status === 404) throw new Error('Endpoint tidak ketemu (404). Cek alamat endpoint 9Router.');
+    if (!res.ok) throw new Error(`9Router ${res.status}: tidak bisa dihubungi.`);
+    const data = (await res.json().catch(() => null)) as { data?: unknown[] } | null;
+    const n = Array.isArray(data?.data) ? data.data.length : 0;
+    return n > 0 ? `9Router OK — ${n} model tersedia.` : '9Router OK — terhubung.';
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw new Error('Test timeout (>15 detik). Pastikan 9Router berjalan.');
+    if (e instanceof TypeError) throw netError(provider);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---------- Fallback offline: remix preset starter ----------

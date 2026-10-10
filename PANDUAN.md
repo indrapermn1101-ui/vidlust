@@ -153,6 +153,13 @@ Di Motion Studio, buka panel **✨ Generate scene dari ide (AI)**:
 4. Tanpa internet/kunci? Klik **🎲 Offline** — preset starter di-remix
    (teks + warna disesuaikan dari ide) tanpa AI.
 
+**Provider 9Router (alternatif gratis):** di panel yang sama, ganti provider ke
+*9Router lokal*. Syarat di laptop: `npm install -g 9router` → jalankan `9router` →
+di dashboard hubungkan provider gratis (mis. Kiro / OpenCode Free) → salin API key
++ nama model (cth `kr/claude-haiku-4.5`) ke panel → **🔌 Test koneksi** sampai OK.
+Catatan: daftar model gratis 9Router berubah-ubah; bila gagal, kembali ke
+Pollinations atau mode offline.
+
 ---
 
 ## 5. Fitur 🖥 Desktop (hanya di file .exe)
